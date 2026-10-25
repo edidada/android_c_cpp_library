@@ -1,0 +1,202 @@
+# Android C/C++ 库构建
+
+使用 **xmake** 与 **Conan 2** 在 Linux / GitHub Actions 上交叉编译常用 C/C++ 库，生成 Android
+各 ABI 的头文件与静态库。仓库本身不包含这些库的源码，只维护「要构建哪些库」的清单和构建脚本。
+
+- 库清单：`libraries/manifest.json`
+- 构建脚本：`scripts/`
+- CI：`.github/workflows/android-libraries.yml`（只负责调用脚本，不包含库列表和编译命令）
+
+## 支持的 Android 库
+
+```bash
+bash scripts/list-libraries.sh            # 终端表格
+bash scripts/list-libraries.sh --markdown # Markdown 表格
+bash scripts/list-libraries.sh --json     # 完整 JSON
+bash scripts/list-libraries.sh --names    # 只输出库名
+```
+
+当前清单覆盖压缩、图像、字体、密码学、网络、序列化、音视频、XML/文本、数学、测试等方向的
+Android 可用库。常用示例：
+
+```bash
+# 只看指定库
+bash scripts/list-libraries.sh --libs zlib,openssl,libcurl
+
+# 只看 Conan 2 能构建的库
+bash scripts/list-libraries.sh --backends conan
+
+# 只看非实验库
+bash scripts/list-libraries.sh --experimental stable
+```
+
+`libraries/manifest.json` 中同时给出 xmake 包名和 Conan 2 引用；两者名称不一致的库（例如
+Opus、FLAC、SDL3、protobuf）已分别配置。标记为 `"experimental": true` 的库通常是体积大、
+依赖多或 Android 适配仍不稳定的库，CI 允许它们失败而不影响整个工作流。
+
+## GitHub Actions
+
+工作流：`.github/workflows/android-libraries.yml`
+
+触发方式：
+
+- push 到 `main`（仅当 `libraries/`、`scripts/`、工作流或 README 变化时）
+- pull request
+- `workflow_dispatch` 手动触发，参数如下
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `libraries` | `all` | `all` 或逗号分隔的库名，例如 `zlib,openssl` |
+| `abis` | `arm64-v8a` | 逗号分隔：`arm64-v8a`、`armeabi-v7a`、`x86_64`、`x86` |
+| `backends` | `all` | `all`、`xmake` 或 `conan` |
+| `api_level` | `21` | Android API level（minSdkVersion） |
+| `include_experimental` | `true` | 是否构建 experimental 库 |
+
+流水线包含两个阶段：
+
+1. **查看支持的 Android 库列表**：安装 xmake 与 Conan 2，校验清单，输出库列表到 job summary，
+   并把库列表展开为构建矩阵。
+2. **构建**：每个库一个 job，按所选后端和 ABI 编译，上传 `dist/<库名>/` 作为 artifact，
+   并把每个库的构建结果写入 job summary。
+
+CI 使用 GitHub 托管 runner 自带的 Android NDK（通过 `ANDROID_NDK_HOME` /
+`ANDROID_NDK_LATEST_HOME` / `$ANDROID_HOME/ndk` 自动定位）。
+
+## 本地构建
+
+需要 Linux / WSL，或任何带 Bash、Python 3、curl 的环境。Windows 原生 PowerShell 不是目标环境。
+
+```bash
+# 1. 安装 xmake + Conan 2，生成 Android Conan profiles
+bash scripts/setup.sh --abis arm64-v8a --api 21
+
+# 2. 查看支持的库
+bash scripts/list-libraries.sh
+
+# 3. 构建
+bash scripts/build.sh --libs zlib,openssl --abis arm64-v8a
+```
+
+常用参数：
+
+```bash
+# 全部库、两种后端
+bash scripts/build.sh
+
+# 只构建一个库的 Conan 包
+bash scripts/build.sh --libs libcurl --backends conan
+
+# 多个 ABI
+bash scripts/build.sh --libs ffmpeg --abis arm64-v8a,armeabi-v7a
+
+# 指定 NDK，清理后重建
+bash scripts/build.sh --ndk /opt/android-ndk-r27c --clean
+
+# 构建失败立即停止
+bash scripts/build.sh --fail-fast
+```
+
+### 环境变量
+
+| 变量 | 作用 |
+| --- | --- |
+| `ANDROID_NDK` / `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT` / `ANDROID_NDK_LATEST_HOME` | 定位 NDK |
+| `ANDROID_HOME` / `ANDROID_SDK_ROOT` | 在 `$SDK/ndk/*` 下查找 NDK |
+| `CONAN_HOME` | Conan 2 缓存目录，默认 `~/.conan2` |
+| `CONAN_VENV` | 自动安装 Conan 时使用的 Python venv |
+| `CONAN_ANDROID_STL` | Android C++ STL，默认 `c++_static` |
+| `DIST_DIR` / `WORK_DIR` | 自定义产物目录 / 临时构建目录 |
+
+如果机器上没有 NDK，可以通过 Android SDK 安装：
+
+```bash
+bash scripts/setup.sh --ndk-version 27.2.12479018
+```
+
+## 产物结构
+
+```text
+dist/
+├── summary.md                 # 总体构建摘要
+├── summary.tsv
+└── <库名>/
+    ├── summary.md             # 单库摘要
+    ├── summary.tsv
+    ├── logs/
+    │   ├── arm64-v8a-xmake.log
+    │   └── arm64-v8a-conan.log
+    └── arm64-v8a/
+        ├── xmake/             # xmake require --export 导出的包（含依赖）
+        └── conan/             # Conan full_deploy 部署的包（含依赖）
+```
+
+- xmake 产物来自 `xmake require --export`，按 `包名/版本/配置哈希` 组织。
+- Conan 产物来自内置 `full_deploy` deployer，可以直接作为离线依赖目录使用。
+
+## 添加新库
+
+编辑 `libraries/manifest.json`，在 `libraries` 数组中加入条目：
+
+```json
+{
+  "name": "mylib",
+  "title": "MyLib",
+  "category": "utility",
+  "description": "示例库",
+  "experimental": false,
+  "minAndroidApi": 21,
+  "headers": ["mylib.h"],
+  "defines": [],
+  "xmake": {
+    "package": "mylib",
+    "version": "1.2.3",
+    "configs": { "shared": false }
+  },
+  "conan": {
+    "reference": "mylib/1.2.3",
+    "options": ["mylib:shared=False"]
+  }
+}
+```
+
+字段说明见 `libraries/manifest.schema.json`。
+
+- `name` 必须唯一，用作目录名和 CI 参数。
+- `xmake.package` 是 [xmake-repo](https://github.com/xmake-io/xmake-repo) 中的包名。
+- `conan.reference` 是 ConanCenter 中的完整引用，必须带版本。
+- `headers` 用于编译探针，校验头文件是否可用；不写则只验证包能编译。
+- `defines` 会以 `#define` 形式加入探针，例如 PCRE2 需要 `PCRE2_CODE_UNIT_WIDTH=8`。
+- `experimental: true` 时 CI 对该库使用 `continue-on-error`。
+
+修改后先校验：
+
+```bash
+bash scripts/list-libraries.sh --validate
+bash scripts/build.sh --libs mylib --abis arm64-v8a
+```
+
+## 构建方式说明
+
+每个库、每个 ABI 都会创建一个最小探针工程：
+
+- **xmake**：探针工程通过 `add_requires()` / `add_packages()` 拉取包，使用
+  `xmake f -p android -a <abi> --ndk=<ndk> --ndk_sdkver=<api>` 配置，编译后
+  `xmake require --export` 导出头文件与库。
+- **Conan 2**：使用 `scripts/setup.sh` 生成的 `android-<abi>` host profile，
+  `conan install --requires=<ref> --build=missing` 从源码构建，`full_deploy` deployer 收集产物。
+
+探针默认会 include 清单中的头文件，从而同时验证编译参数和头文件可用性；可用
+`--no-header-check` 关闭。
+
+## 相关文件
+
+```text
+.github/workflows/android-libraries.yml   CI（只调用脚本）
+libraries/manifest.json                   库清单
+libraries/manifest.schema.json            清单 JSON Schema
+scripts/setup.sh                          安装 xmake / Conan 2，生成 NDK / Conan profiles
+scripts/list-libraries.sh                 查看支持的 Android 库列表
+scripts/build.sh                          编译入口
+scripts/lib/common.sh                     NDK / ABI / 日志等公共函数
+scripts/lib/manifest.py                   清单解析、校验、matrix / TSV 输出
+```

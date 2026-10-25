@@ -1,0 +1,180 @@
+name: Android C/C++ Libraries
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/android-libraries.yml"
+      - "libraries/**"
+      - "scripts/**"
+      - "README.md"
+  pull_request:
+    paths:
+      - ".github/workflows/android-libraries.yml"
+      - "libraries/**"
+      - "scripts/**"
+      - "README.md"
+  workflow_dispatch:
+    inputs:
+      libraries:
+        description: "要构建的库：all 或逗号分隔，例如 zlib,openssl"
+        required: false
+        default: "all"
+        type: string
+      abis:
+        description: "ABI 列表，逗号分隔：arm64-v8a,armeabi-v7a,x86_64,x86"
+        required: false
+        default: "arm64-v8a"
+        type: string
+      backends:
+        description: "构建后端"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - xmake
+          - conan
+      api_level:
+        description: "Android API level（minSdkVersion）"
+        required: false
+        default: "21"
+        type: string
+      include_experimental:
+        description: "是否构建 experimental 库"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-libraries-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LIBRARIES: ${{ github.event.inputs.libraries || 'all' }}
+  ABIS: ${{ github.event.inputs.abis || 'arm64-v8a' }}
+  BACKENDS: ${{ github.event.inputs.backends || 'all' }}
+  API_LEVEL: ${{ github.event.inputs.api_level || '21' }}
+  EXPERIMENTAL: ${{ github.event.inputs.include_experimental || 'true' }}
+
+jobs:
+  discover:
+    name: 查看支持的 Android 库
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      count: ${{ steps.matrix.outputs.count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装 xmake 与 Conan 2
+        run: |
+          bash scripts/setup.sh --skip-profiles
+          xmake --version
+          conan --version
+
+      - name: 展开构建矩阵
+        id: matrix
+        run: |
+          bash scripts/list-libraries.sh --validate
+          mode="all"
+          if [ "$EXPERIMENTAL" = "false" ]; then
+            mode="stable"
+          fi
+          matrix="$(bash scripts/list-libraries.sh --matrix \
+            --libs "$LIBRARIES" --backends "$BACKENDS" --experimental "$mode")"
+          count="$(python3 -c 'import json,sys; print(len(json.loads(sys.argv[1])))' "$matrix")"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::没有匹配的库：libraries=$LIBRARIES, backends=$BACKENDS, experimental=$mode"
+            exit 1
+          fi
+          {
+            echo "matrix=$matrix"
+            echo "count=$count"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: 输出支持的库列表
+        run: |
+          mode="all"
+          if [ "$EXPERIMENTAL" = "false" ]; then
+            mode="stable"
+          fi
+          {
+            echo "## 支持的 Android C/C++ 库"
+            echo
+            echo "请求的库：\`$LIBRARIES\`，后端：\`$BACKENDS\`，ABI：\`$ABIS\`，API：\`$API_LEVEL\`"
+            echo
+            bash scripts/list-libraries.sh --markdown \
+              --libs "$LIBRARIES" --backends "$BACKENDS" --experimental "$mode"
+            echo
+            echo "共 **${{ steps.matrix.outputs.count }}** 个库 × 后端组合进入构建矩阵。"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: ${{ matrix.library.name }} (${{ matrix.library.backends }})
+    needs: discover
+    if: needs.discover.outputs.count != '0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    continue-on-error: ${{ matrix.library.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        library: ${{ fromJSON(needs.discover.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache xmake
+        if: contains(matrix.library.backends, 'xmake')
+        uses: actions/cache@v4
+        with:
+          path: ~/.xmake
+          key: xmake-${{ runner.os }}-${{ matrix.library.name }}-${{ hashFiles('libraries/manifest.json', 'scripts/**') }}
+          restore-keys: |
+            xmake-${{ runner.os }}-${{ matrix.library.name }}-
+            xmake-${{ runner.os }}-
+
+      - name: 安装 xmake 与 Conan 2
+        run: |
+          bash scripts/setup.sh \
+            --backends "${{ matrix.library.backends }}" \
+            --abis "$ABIS" \
+            --api "$API_LEVEL"
+
+      - name: 构建 ${{ matrix.library.name }}
+        run: |
+          mode="all"
+          if [ "$EXPERIMENTAL" = "false" ]; then
+            mode="stable"
+          fi
+          bash scripts/build.sh \
+            --libs "${{ matrix.library.name }}" \
+            --backends "${{ matrix.library.backends }}" \
+            --abis "$ABIS" \
+            --api "$API_LEVEL" \
+            --experimental "$mode"
+
+      - name: 上传产物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.library.name }}-${{ matrix.library.backends }}
+          path: dist/${{ matrix.library.name }}
+          if-no-files-found: ignore
+          retention-days: 14

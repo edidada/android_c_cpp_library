@@ -1,0 +1,12 @@
+# Build outputs
+/build/
+/dist/
+
+# Toolchain caches (when configured to live inside the repo)
+/.xmake/
+/.conan2/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
