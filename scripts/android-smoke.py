@@ -214,13 +214,16 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
             raise RuntimeError("Conan Android/OpenSSL requires MSYS2; install it or set MSYS2_ROOT")
         # The Windows runner image ships MSYS2 without its base development
         # packages, so make.exe is missing even though bash.exe exists. Conan's
-        # Android toolchain uses Unix Makefiles for CMake, and OpenSSL's recipe
+        # Android toolchain uses MSYS Makefiles for CMake, and OpenSSL's recipe
         # invokes make through win_bash, so install it before any package build.
+        # Also install MSYS2's POSIX perl: OpenSSL's Configure must find the NDK
+        # clang through the POSIX PATH exported by conanbuild.sh, and the
+        # Strawberry Perl the runners ship parses Windows-style PATHs only.
         make = msys_root / "usr/bin/make.exe"
-        if not make.is_file():
-            checked([str(msys_bash), "-lc", "pacman --noconfirm --needed -Sy make"])
-        if not make.is_file():
-            raise RuntimeError("MSYS2 make was not installed; cannot build Conan packages on Windows")
+        if not make.is_file() or not (msys_root / "usr/bin/perl.exe").is_file():
+            checked([str(msys_bash), "-lc", "pacman --noconfirm --needed -Sy make perl"])
+        if not make.is_file() or not (msys_root / "usr/bin/perl.exe").is_file():
+            raise RuntimeError("MSYS2 make/perl were not installed; cannot build Conan packages on Windows")
         env["PATH"] = str(msys_root / "usr/bin") + os.pathsep + env["PATH"]
         # Recipes such as OpenSSL's run inside MSYS2 bash (win_bash). Their
         # build scripts must see MSYS2-style POSIX paths, otherwise a
