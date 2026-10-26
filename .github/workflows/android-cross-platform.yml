@@ -1,0 +1,112 @@
+name: Android Cross-Platform Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/android-cross-platform.yml"
+      - "libraries/**"
+      - "scripts/**"
+      - "README.md"
+  pull_request:
+    paths:
+      - ".github/workflows/android-cross-platform.yml"
+      - "libraries/**"
+      - "scripts/**"
+      - "README.md"
+  workflow_dispatch:
+    inputs:
+      libraries:
+        description: "要构建的库：core/all 或逗号分隔"
+        required: false
+        default: "core"
+        type: string
+      abis:
+        description: "ABI 列表，逗号分隔"
+        required: false
+        default: "arm64-v8a"
+        type: string
+      backends:
+        description: "构建后端"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - xmake
+          - conan
+      api_level:
+        description: "Android API level"
+        required: false
+        default: "21"
+        type: string
+      include_experimental:
+        description: "是否包含 experimental 库"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-cross-platform-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LIBRARIES: ${{ github.event.inputs.libraries || 'core' }}
+  ABIS: ${{ github.event.inputs.abis || 'arm64-v8a' }}
+  BACKENDS: ${{ github.event.inputs.backends || 'all' }}
+  API_LEVEL: ${{ github.event.inputs.api_level || '21' }}
+  EXPERIMENTAL: ${{ github.event.inputs.include_experimental || 'true' }}
+
+jobs:
+  build:
+    name: ${{ matrix.platform }} -> Android
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-24.04
+          - platform: mac
+            os: macos-14
+          - platform: win
+            os: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 构建 Android 库（${{ matrix.platform }} 宿主）
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          if [ "$EXPERIMENTAL" = "false" ]; then
+            experimental="stable"
+          else
+            experimental="all"
+          fi
+          bash "scripts/${PLATFORM}/build.sh" \
+            --libs "$LIBRARIES" \
+            --backends "$BACKENDS" \
+            --abis "$ABIS" \
+            --api "$API_LEVEL" \
+            --experimental "$experimental"
+
+      - name: 上传产物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-cross-${{ matrix.platform }}
+          path: dist/
+          if-no-files-found: ignore
+          retention-days: 14

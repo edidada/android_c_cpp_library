@@ -15,7 +15,7 @@ usage() {
 用法: scripts/build.sh [选项]
 
 选项:
-  --libs LIST           all（默认）或逗号分隔的库名
+  --libs LIST           all（默认）、core 或逗号分隔的库名 / preset
   --backends LIST       all（默认）/ xmake / conan / xmake,conan
   --abis LIST           逗号分隔的 ABI，默认取清单 defaults.abis
   --api LEVEL           Android API level，默认取清单 defaults.androidApi
@@ -72,6 +72,9 @@ done
 require_file "$MANIFEST"
 require_python
 manifest validate >/dev/null
+
+# 兼容 setup.sh 在子进程安装工具后 PATH 未传递到当前 shell 的情况。
+add_toolchain_paths
 
 case "$dist_dir" in
     /*) ;;
@@ -180,6 +183,10 @@ write_probe_project() {
     local defines="$6"
     local package_spec="$xmake_pkg"
     local lua_configs=""
+    local repo_root_lua
+
+    repo_root_lua="${REPO_ROOT//\\//}"
+    repo_root_lua="${repo_root_lua//\"/\\\"}"
 
     if [ -n "$xmake_version" ]; then
         package_spec="$xmake_pkg $xmake_version"
@@ -190,6 +197,7 @@ write_probe_project() {
     fi
 
     {
+        printf 'add_repositories("android-libs scripts/android/xmake/repo", {rootdir = "%s"})\n' "$repo_root_lua"
         printf 'add_rules("mode.release")\n'
         printf 'add_requires("%s"%s)\n\n' "$package_spec" "$lua_configs"
         printf 'target("probe")\n'

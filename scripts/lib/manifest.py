@@ -134,6 +134,20 @@ def validate(data: Dict[str, Any]) -> None:
     if errors:
         raise ManifestError("清单校验失败:\n  - " + "\n  - ".join(errors))
 
+    presets = data.get("presets", {})
+    if not isinstance(presets, dict):
+        raise ManifestError("presets 必须是 object")
+    for preset_name, preset_libs in presets.items():
+        if not isinstance(preset_name, str) or not NAME_RE.match(preset_name):
+            raise ManifestError(f"presets 名称非法: {preset_name!r}")
+        if not isinstance(preset_libs, list) or not preset_libs:
+            raise ManifestError(f"presets.{preset_name} 必须是非空数组")
+        for lib in preset_libs:
+            if not isinstance(lib, str) or not lib:
+                raise ManifestError(f"presets.{preset_name} 中必须是库名字符串")
+            if lib not in seen:
+                raise ManifestError(f"presets.{preset_name} 引用了不存在的库: {lib}")
+
 
 def library_backends(item: Dict[str, Any]) -> List[str]:
     return [backend for backend in ("xmake", "conan") if backend in item]
@@ -163,19 +177,38 @@ def selected_libraries(
 
     libraries = data["libraries"]
     by_name = {item["name"]: item for item in libraries}
+    presets = data.get("presets") or {}
 
     if libs_spec == "all":
         wanted = list(libraries)
     else:
-        names = [value.strip() for value in libs_spec.split(",") if value.strip()]
-        if not names:
+        tokens = [value.strip() for value in libs_spec.split(",") if value.strip()]
+        if not tokens:
             raise ManifestError("--libs 不能为空")
-        unknown = [name for name in names if name not in by_name]
+
+        names: List[str] = []
+        for token in tokens:
+            if token in presets:
+                names.extend(presets[token])
+            else:
+                names.append(token)
+
+        # 去重并保持顺序，便于 preset 与单个库混用。
+        unique_names: List[str] = []
+        seen_names = set()
+        for name in names:
+            if name not in seen_names:
+                unique_names.append(name)
+                seen_names.add(name)
+
+        unknown = [name for name in unique_names if name not in by_name]
         if unknown:
             raise ManifestError(
-                f"未知库: {', '.join(unknown)}\n可用库: {', '.join(sorted(by_name))}"
+                f"未知库: {', '.join(unknown)}\n"
+                f"可用库: {', '.join(sorted(by_name))}\n"
+                f"可用 presets: {', '.join(sorted(presets)) or '(无)'}"
             )
-        wanted = [by_name[name] for name in names]
+        wanted = [by_name[name] for name in unique_names]
 
     result: List[Dict[str, Any]] = []
     for item in wanted:

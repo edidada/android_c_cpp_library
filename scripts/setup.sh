@@ -91,6 +91,20 @@ install_xmake() {
         return 0
     fi
 
+    if is_windows_shell; then
+        have powershell.exe || die "Windows 下安装 xmake 需要 powershell.exe"
+        log "安装 xmake（PowerShell 安装脚本）..."
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
+            "Invoke-Expression (Invoke-WebRequest 'https://xmake.io/psget.text' -UseBasicParsing).Content" \
+            || die "xmake 安装失败"
+        append_path_if_dir "$HOME/xmake"
+        append_path_if_dir "${LOCALAPPDATA:-$HOME/AppData/Local}/Programs/xmake"
+        hash -r
+        have xmake || die "xmake 安装后仍找不到命令，请检查 \$HOME/xmake 是否在 PATH 中"
+        log "xmake 安装完成: $(xmake --version 2>/dev/null | head -n 1 | strip_ansi)"
+        return 0
+    fi
+
     have curl || die "安装 xmake 需要 curl"
     log "安装 xmake（官方安装脚本）..."
     local script
@@ -116,15 +130,22 @@ install_conan() {
 
     have "$PYTHON" || die "安装 Conan 需要 Python 3"
     local venv="${CONAN_VENV:-$HOME/.local/share/android-c-cpp-library/conan-venv}"
+    local venv_bin="$venv/bin"
+    local venv_python="$venv/bin/python"
     local spec="conan>=2,<3"
     [ -n "$conan_version" ] && spec="conan==$conan_version"
 
+    if is_windows_shell; then
+        venv_bin="$venv/Scripts"
+        venv_python="$venv_bin/python.exe"
+    fi
+
     log "在虚拟环境中安装 Conan 2: $venv"
     "$PYTHON" -m venv "$venv" || die "创建 Python venv 失败: $venv"
-    "$venv/bin/python" -m pip install --upgrade pip >/dev/null
-    "$venv/bin/python" -m pip install --upgrade "$spec" || die "安装 $spec 失败"
+    "$venv_python" -m pip install --upgrade pip >/dev/null
+    "$venv_python" -m pip install --upgrade "$spec" || die "安装 $spec 失败"
 
-    append_path_if_dir "$venv/bin"
+    append_path_if_dir "$venv_bin"
     hash -r
     have conan || die "Conan 安装后仍找不到命令"
     conan --version 2>/dev/null | grep -q '^Conan version 2\.' \
@@ -153,6 +174,10 @@ install_ndk_with_sdkmanager() {
         [ -n "$sdk" ] || continue
         if [ -x "$sdk/cmdline-tools/latest/bin/sdkmanager" ]; then
             sdk_manager="$sdk/cmdline-tools/latest/bin/sdkmanager"
+            break
+        fi
+        if [ -f "$sdk/cmdline-tools/latest/bin/sdkmanager.bat" ]; then
+            sdk_manager="$sdk/cmdline-tools/latest/bin/sdkmanager.bat"
             break
         fi
     done

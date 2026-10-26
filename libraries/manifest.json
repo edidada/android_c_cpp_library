@@ -6,6 +6,18 @@
     "abis": ["arm64-v8a"],
     "buildType": "Release"
   },
+  "presets": {
+    "core": [
+      "libevent",
+      "zlib",
+      "openssl",
+      "sqlite3",
+      "libcurl",
+      "libuv",
+      "libssh2",
+      "c-ares"
+    ]
+  },
   "libraries": [
     {
       "name": "zlib",

@@ -17,7 +17,7 @@ usage() {
 用法: scripts/list-libraries.sh [选项]
 
 选项:
-  --libs LIST           all（默认）或逗号分隔的库名，例如 zlib,openssl
+  --libs LIST           all、core 或逗号分隔的库名 / preset，例如 zlib,openssl
   --backends LIST       all（默认）/ xmake / conan / xmake,conan
   --experimental MODE   all（默认）/ stable（排除实验库）/ only（仅实验库）
   --format FORMAT       table（默认）/ markdown / json / names / matrix / tsv

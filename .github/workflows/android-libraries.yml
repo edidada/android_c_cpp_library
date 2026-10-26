@@ -54,7 +54,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  LIBRARIES: ${{ github.event.inputs.libraries || 'all' }}
+  # push / PR 上默认只跑 core 冒烟集；手动触发可通过 inputs 选择 all。
+  LIBRARIES: ${{ github.event.inputs.libraries || 'core' }}
   ABIS: ${{ github.event.inputs.abis || 'arm64-v8a' }}
   BACKENDS: ${{ github.event.inputs.backends || 'all' }}
   API_LEVEL: ${{ github.event.inputs.api_level || '21' }}
@@ -79,8 +80,6 @@ jobs:
       - name: 安装 xmake 与 Conan 2
         run: |
           bash scripts/setup.sh --skip-profiles
-          xmake --version
-          conan --version
 
       - name: 展开构建矩阵
         id: matrix
