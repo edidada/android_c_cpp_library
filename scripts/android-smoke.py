@@ -45,11 +45,18 @@ def run(command, log, env=None):
     return result.returncode
 
 
-def build(backend, output, ndk_arg, jobs):
+def build(backend, output, ndk_arg, jobs, library=None):
     config, manifest = read_config()
+    if library is not None:
+        selected = [item for item in config["libraries"] if item["name"] == library]
+        if not selected:
+            raise ValueError(f"Library is not in the smoke selection: {library}")
+        config = dict(config, libraries=selected)
     if platform.system() != "Linux":
         raise ValueError("This smoke entry currently requires a Linux host")
     directory = output / backend
+    if library is not None:
+        directory = directory / library
     directory.mkdir(parents=True, exist_ok=True)
     log = directory / "build.log"
     log.write_text("", encoding="utf-8")
@@ -93,7 +100,7 @@ def build(backend, output, ndk_arg, jobs):
                     if row["status"] == "success":
                         try:
                             row["archivesVerified"] = verify_archives(directory / "packages" / row["name"], ndk, config["abi"])
-                        except RuntimeError as error:
+                        except (RuntimeError, OSError, subprocess.CalledProcessError) as error:
                             row.update(status="failure", error=str(error))
             if code:
                 result["error"] = f"build entry exited {code}; see build.log and per-library logs"
@@ -140,7 +147,7 @@ def build_vcpkg(config, rows, directory, log, env, jobs):
         if code == 0:
             try:
                 row["archivesVerified"] = verify_archives(installed / triplet / "lib", env["ANDROID_NDK_HOME"], config["abi"])
-            except RuntimeError as error:
+            except (RuntimeError, OSError, subprocess.CalledProcessError) as error:
                 code = 1
                 row["error"] = str(error)
         row.update(status="success" if code == 0 else "failure", seconds=round(time.monotonic() - started), package=port)
@@ -167,12 +174,23 @@ def verify_archives(directory, ndk, abi):
 def report(output, destination, run_url):
     config, _ = read_config()
     results = {}
-    for backend in config["backends"]:
-        paths = list(output.rglob(f"{backend}/results.json"))
-        if len(paths) > 1:
-            raise ValueError(f"duplicate results for {backend}")
-        if paths:
-            results[backend] = json.loads(paths[0].read_text(encoding="utf-8"))
+    for path in sorted(output.rglob("results.json")):
+        result = json.loads(path.read_text(encoding="utf-8"))
+        backend = result["backend"]
+        if backend not in config["backends"]:
+            raise ValueError(f"unknown backend in {path}: {backend}")
+        if backend not in results:
+            results[backend] = dict(result, rows=[], errors=[])
+        combined = results[backend]
+        for field in ("revision", "abi", "api", "ndk"):
+            if combined[field] != result[field]:
+                raise ValueError(f"inconsistent {field} in {path}")
+        names = {row["name"] for row in combined["rows"]}
+        if any(row["name"] in names for row in result["rows"]):
+            raise ValueError(f"duplicate library results for {backend}: {path}")
+        combined["rows"].extend(result["rows"])
+        if result.get("error"):
+            combined["errors"].append(result["error"])
     lines = ["# 常用 10 库 Android 编译验证", "",
              f"目标：Linux → Android `{config['abi']}` / API {config['api']} / Release。", "",
              f"[GitHub Actions 运行与日志]({run_url})" if run_url else "独立脚本运行。", "",
@@ -198,11 +216,11 @@ def report(output, destination, run_url):
         lines += [f"- {backend}：源码 `{result['revision']}`；NDK `{result['ndk']}`；时间 {result['generated']}。"]
         if result.get("toolReference"):
             lines.append(f"  vcpkg 快照：`{result['toolReference']}`。")
-        if result.get("error"):
-            lines.append("  错误：" + result["error"].replace("\n", " "))
+        for error in result.get("errors", []):
+            lines.append("  错误：" + error.replace("\n", " "))
     lines += ["", "每个后端的 artifact 含 results.json、build.log、安装产物及可取得的单库日志；vcpkg 版本见 installed-versions.txt，Conan/xmake 版本见构建日志。",
-              "", "## 独立使用", "", "```bash", "python scripts/android-smoke.py build --backend vcpkg",
-              "python scripts/android-smoke.py build --backend conan", "python scripts/android-smoke.py build --backend xmake",
+              "", "## 独立使用", "", "```bash", "bash scripts/linux/libevent.sh # 默认使用三个后端",
+              "bash scripts/linux/libevent.sh --backend conan", "bash scripts/linux/zlib.sh --backend vcpkg",
               "python scripts/android-smoke.py report", "```", "",
               "库选择与 vcpkg 映射位于 libraries/android-smoke.json；Conan/xmake 包信息复用 libraries/manifest.json。脚本不读取 YAML 或依赖 GitHub 环境变量。"]
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -216,7 +234,8 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("matrix")
     builder = sub.add_parser("build")
-    builder.add_argument("--backend", choices=("vcpkg", "conan", "xmake"), required=True)
+    builder.add_argument("--backend", choices=("all", "vcpkg", "conan", "xmake"), default="all")
+    builder.add_argument("--library", help="Build only this library from the smoke selection")
     builder.add_argument("--ndk")
     builder.add_argument("--jobs", type=int, default=2)
     builder.add_argument("--output", type=Path, default=ROOT / "dist/smoke")
@@ -227,10 +246,17 @@ def main():
     args = parser.parse_args()
     if args.command == "matrix":
         config, _ = read_config()
-        print(json.dumps({"backend": config["backends"]}))
+        libraries = [item["name"] for item in config["libraries"]]
+        for library in libraries:
+            if not (ROOT / "scripts/linux" / f"{library}.sh").is_file():
+                raise ValueError(f"Missing library entry: {library}.sh")
+        print(json.dumps({"backend": config["backends"], "library": libraries}))
         return 0
     if args.command == "build":
-        return build(args.backend, args.output.resolve(), args.ndk, args.jobs)
+        config, _ = read_config()
+        backends = config["backends"] if args.backend == "all" else [args.backend]
+        codes = [build(backend, args.output.resolve(), args.ndk, args.jobs, args.library) for backend in backends]
+        return 0 if all(code == 0 for code in codes) else 1
     return report(args.output.resolve(), args.destination, args.run_url)
 
 

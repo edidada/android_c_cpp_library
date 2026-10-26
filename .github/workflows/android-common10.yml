@@ -8,6 +8,13 @@ on:
       - ".github/workflows/android-common10.yml"
       - "libraries/android-smoke.json"
       - "scripts/android-smoke.py"
+      - "scripts/linux/**"
+      - "scripts/lib/**"
+      - "scripts/setup.sh"
+      - "scripts/build.sh"
+      - "scripts/android/**"
+      - "libraries/manifest.json"
+      - "tests/test_android_smoke.py"
 
 permissions:
   contents: read
@@ -23,6 +30,8 @@ jobs:
       matrix: ${{ steps.matrix.outputs.value }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validate per-library report aggregation
+        run: python3 -m unittest discover -s tests -p test_android_smoke.py -v
       - id: matrix
         run: echo "value=$(python3 scripts/android-smoke.py matrix)" >> "$GITHUB_OUTPUT"
 
@@ -38,14 +47,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Build Android libraries
+      - name: Build ${{ matrix.library }} with ${{ matrix.backend }}
         env:
           BACKEND: ${{ matrix.backend }}
-        run: python scripts/android-smoke.py build --backend "$BACKEND"
+          LIBRARY: ${{ matrix.library }}
+        run: bash "scripts/linux/${LIBRARY}.sh" --backend "$BACKEND"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: common10-${{ matrix.backend }}
+          name: common10-${{ matrix.library }}-${{ matrix.backend }}
           path: dist/smoke/
           if-no-files-found: error
           retention-days: 14
