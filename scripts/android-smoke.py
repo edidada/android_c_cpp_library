@@ -205,7 +205,12 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
         profile.write_text(f"[settings]\nos=Android\narch={arch}\ncompiler=clang\ncompiler.version={version}\n"
                            f"compiler.libcxx=c++_static\nbuild_type=Release\nos.api_level={config['api']}\n"
                            f"[conf]\ntools.android:ndk_path={env['ANDROID_NDK_HOME']}\n"
-                           f"tools.microsoft.bash:subsystem=msys2\ntools.microsoft.bash:path={msys_bash.as_posix()}\n", encoding="utf-8")
+                           f"tools.microsoft.bash:subsystem=msys2\ntools.microsoft.bash:path={msys_bash.as_posix()}\n"
+                           "tools.microsoft.bash:login=False\n"
+                           f"tools.gnu:make_program={(msys_root / 'usr/bin/make.exe').as_posix()}\n"
+                           "[buildenv]\n"
+                           f"PATH=+(path){ndk_bin_dir(env['ANDROID_NDK_HOME']).as_posix()};{(msys_root / 'usr/bin').as_posix()}\n",
+                           encoding="utf-8")
     for row in rows:
         started = time.monotonic()
         name = row["name"]
@@ -377,6 +382,7 @@ def main():
     matrix_parser.add_argument("--platform", choices=("linux", "mac", "win"), default="linux")
     matrix_parser.add_argument("--all-platforms", action="store_true")
     matrix_parser.add_argument("--group-by-backend", action="store_true")
+    matrix_parser.add_argument("--backend", choices=("all", "vcpkg", "conan", "xmake"), default="all")
     sub.add_parser("libraries")
     builder = sub.add_parser("build")
     builder.add_argument("--backend", choices=("all", "vcpkg", "conan", "xmake"), default="all")
@@ -405,8 +411,9 @@ def main():
         runner = runners[args.platform]
         if args.group_by_backend:
             hosts = list(runners) if args.all_platforms else [args.platform]
+            backends = config["backends"] if args.backend == "all" else [args.backend]
             print(json.dumps({"include": [dict(platform=host, os=runners[host], backend=backend)
-                                          for host in hosts for backend in config["backends"]]}))
+                                          for host in hosts for backend in backends]}))
             return 0
         print(json.dumps({"backend": config["backends"], "library": libraries,
                           "include": [{"platform": args.platform, "os": runner}]}))
