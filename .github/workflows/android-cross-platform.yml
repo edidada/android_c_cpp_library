@@ -13,6 +13,15 @@ on:
       - "libraries/**"
       - "scripts/**"
   workflow_dispatch:
+    inputs:
+      platform:
+        type: choice
+        default: all
+        options: [all, linux, mac, win]
+      backend:
+        type: choice
+        default: all
+        options: [all, vcpkg, conan, xmake]
 
 permissions:
   contents: read
@@ -29,7 +38,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: matrix
-        run: echo "value=$(python3 scripts/android-smoke.py matrix --all-platforms --group-by-backend)" >> "$GITHUB_OUTPUT"
+        env:
+          SELECTED_PLATFORM: ${{ inputs.platform || 'all' }}
+          SELECTED_BACKEND: ${{ inputs.backend || 'all' }}
+        run: |
+          if [ "$SELECTED_PLATFORM" = all ]; then
+            platform_args=(--all-platforms)
+          else
+            platform_args=(--platform "$SELECTED_PLATFORM")
+          fi
+          echo "value=$(python3 scripts/android-smoke.py matrix "${platform_args[@]}" --group-by-backend --backend "$SELECTED_BACKEND")" >> "$GITHUB_OUTPUT"
 
   build:
     name: ${{ matrix.platform }} / ${{ matrix.backend }} -> Android
