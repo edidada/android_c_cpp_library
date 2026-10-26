@@ -2,7 +2,7 @@
 
 目标：Linux → Android `arm64-v8a` / API 28 / Release。
 
-[GitHub Actions 运行与日志](https://github.com/edidada/android_c_cpp_library/actions/runs/40326079514)
+[GitHub Actions 运行与日志](https://github.com/edidada/android_c_cpp_library/actions/runs/40327853564)
 
 验证的是选定配置下包的实际构建与产物导出；不是 Android 设备运行测试，也不证明所有 ABI/选项可用。
 xmake 会编译头文件探针；Conan/vcpkg 构建包。各后端版本及默认功能可能不同。
@@ -26,10 +26,10 @@ xmake 会编译头文件探针；Conan/vcpkg 构建包。各后端版本及默�
 
 ## 环境与证据
 
-- vcpkg：源码 `68c4da551aebac0908028d26b1bf2e8355bd1494`；NDK `/usr/local/lib/android/sdk/ndk/27.3.13750724`；时间 2026-10-26T12:54:09.687532+00:00。
+- vcpkg：源码 `e8351ca012436e03f83140816f2a09104c2cf33f`；NDK `/usr/local/lib/android/sdk/ndk/27.3.13750724`；时间 2026-10-26T13:07:26.921891+00:00。
   vcpkg 快照：`817892b0ecbc6af994dd6df999c73faf795adbf2`。
-- conan：源码 `68c4da551aebac0908028d26b1bf2e8355bd1494`；NDK `/usr/local/lib/android/sdk/ndk/27.3.13750724`；时间 2026-10-26T12:54:09.787307+00:00。
-- xmake：源码 `68c4da551aebac0908028d26b1bf2e8355bd1494`；NDK `/usr/local/lib/android/sdk/ndk/27.3.13750724`；时间 2026-10-26T12:56:50.426852+00:00。
+- conan：源码 `e8351ca012436e03f83140816f2a09104c2cf33f`；NDK `/usr/local/lib/android/sdk/ndk/27.3.13750724`；时间 2026-10-26T13:10:02.837420+00:00。
+- xmake：源码 `e8351ca012436e03f83140816f2a09104c2cf33f`；NDK `/usr/local/lib/android/sdk/ndk/27.3.13750724`；时间 2026-10-26T13:08:27.644623+00:00。
 
 每个后端的 artifact 含 results.json、build.log、安装产物及可取得的单库日志；vcpkg 版本见 installed-versions.txt，Conan/xmake 版本见构建日志。
 
