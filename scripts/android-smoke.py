@@ -23,6 +23,15 @@ def host_platform():
     return {"Linux": "linux", "Darwin": "mac", "Windows": "win"}[platform.system()]
 
 
+def msys_path(path):
+    """Convert a Windows path such as C:/msys64 to MSYS2's /c/msys64 form."""
+    text = Path(path).as_posix()
+    match = re.match(r"^([A-Za-z]):/(.*)$", text)
+    if match:
+        return f"/{match.group(1).lower()}/{match.group(2)}"
+    return text
+
+
 def ndk_bin_dir(ndk):
     tag = {"linux": "linux-x86_64", "mac": "darwin-x86_64", "win": "windows-x86_64"}[host_platform()]
     return Path(ndk) / "toolchains/llvm/prebuilt" / tag / "bin"
@@ -213,6 +222,11 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
         if not make.is_file():
             raise RuntimeError("MSYS2 make was not installed; cannot build Conan packages on Windows")
         env["PATH"] = str(msys_root / "usr/bin") + os.pathsep + env["PATH"]
+        # Recipes such as OpenSSL's run inside MSYS2 bash (win_bash). Their
+        # build scripts must see MSYS2-style POSIX paths, otherwise a
+        # C:/Android/... NDK root never matches PATH entries that bash exports
+        # as /c/Android/.... The NDK path used by CMake stays in Windows form.
+        ndk_msys = msys_path(env["ANDROID_NDK_HOME"])
         profile.write_text(f"[settings]\nos=Android\narch={arch}\ncompiler=clang\ncompiler.version={version}\n"
                            f"compiler.libcxx=c++_static\nbuild_type=Release\nos.api_level={config['api']}\n"
                            f"[conf]\ntools.android:ndk_path={env['ANDROID_NDK_HOME']}\n"
@@ -220,11 +234,10 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
                            f"tools.gnu:make_program={(msys_root / 'usr/bin/make.exe').as_posix()}\n"
                            "tools.cmake.cmaketoolchain:generator=MSYS Makefiles\n"
                            "[buildenv]\n"
-                           f"PATH=+(path){(msys_root / 'usr/bin').as_posix()}\n"
-                           f"PATH=+(path){ndk_bin_dir(env['ANDROID_NDK_HOME']).as_posix()}\n",
+                           f"PATH=+(path){msys_path(msys_root / 'usr/bin')}\n"
+                           f"PATH=+(path){msys_path(ndk_bin_dir(env['ANDROID_NDK_HOME']))}\n"
+                           f"ANDROID_NDK_ROOT={ndk_msys}\n",
                            encoding="utf-8")
-        checked([str(msys_bash), "-lc",
-                 'echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"; command -v clang || true; echo "PATH=$PATH"'])
     for row in rows:
         started = time.monotonic()
         name = row["name"]
