@@ -172,6 +172,23 @@ android_ndk_clang_major() {
         | head -n 1
 }
 
+# Recent NDKs only ship llvm-ranlib. xmake's NDK toolchain still looks for
+# <triple>-ranlib; without it macOS can index ELF archives using Apple's tool.
+ensure_ndk_ranlib() {
+    local ndk="$1" bin triple suffix=""
+    bin="$ndk/toolchains/llvm/prebuilt/$(android_ndk_host_tag)/bin"
+    is_windows_shell && suffix=".exe"
+    [ -f "$bin/llvm-ranlib$suffix" ] || die "NDK llvm-ranlib missing: $bin"
+    for triple in aarch64-linux-android arm-linux-androideabi i686-linux-android x86_64-linux-android; do
+        [ ! -e "$bin/$triple-ranlib$suffix" ] || continue
+        if is_windows_shell; then
+            cp "$bin/llvm-ranlib$suffix" "$bin/$triple-ranlib$suffix"
+        else
+            ln -s llvm-ranlib "$bin/$triple-ranlib"
+        fi
+    done
+}
+
 # xmake 直接使用 ABI 名称作为 -a 参数。
 abi_to_xmake_arch() {
     case "$1" in

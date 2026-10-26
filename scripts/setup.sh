@@ -283,6 +283,9 @@ if [ "$skip_profiles" -eq 0 ]; then
 
     export ANDROID_NDK_HOME="$ndk"
     log "Android NDK: $ndk"
+    if [ "$want_xmake" -eq 1 ]; then
+        ensure_ndk_ranlib "$ndk"
+    fi
 
     if [ "$want_conan" -eq 1 ]; then
         ensure_conan_remote

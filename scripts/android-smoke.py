@@ -28,6 +28,21 @@ def ndk_bin_dir(ndk):
     return Path(ndk) / "toolchains/llvm/prebuilt" / tag / "bin"
 
 
+def ensure_ndk_ranlib(ndk):
+    directory = ndk_bin_dir(ndk)
+    suffix = ".exe" if host_platform() == "win" else ""
+    source = directory / ("llvm-ranlib" + suffix)
+    if not source.is_file():
+        raise RuntimeError(f"NDK llvm-ranlib missing: {source}")
+    for triple in ("aarch64-linux-android", "arm-linux-androideabi", "i686-linux-android", "x86_64-linux-android"):
+        alias = directory / (triple + "-ranlib" + suffix)
+        if not alias.exists():
+            if suffix:
+                shutil.copy2(source, alias)
+            else:
+                alias.symlink_to(source.name)
+
+
 def resolve_ndk():
     for name in ("ANDROID_NDK", "ANDROID_NDK_HOME", "ANDROID_NDK_ROOT", "ANDROID_NDK_LATEST_HOME"):
         path = os.environ.get(name)
@@ -101,6 +116,8 @@ def build(backend, output, ndk_arg, jobs, library=None):
         # OpenSSL's Android Configure locates clang through PATH, including
         # recipes that do not generate a compiler environment themselves.
         ndk_bin = str(ndk_bin_dir(ndk))
+        if backend == "xmake":
+            ensure_ndk_ranlib(ndk)
         env = dict(os.environ, ANDROID_NDK_HOME=ndk, PYTHONUTF8="1",
                    PATH=ndk_bin + os.pathsep + os.environ.get("PATH", ""))
         if backend == "vcpkg":
@@ -348,6 +365,9 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     matrix_parser = sub.add_parser("matrix")
     matrix_parser.add_argument("--platform", choices=("linux", "mac", "win"), default="linux")
+    matrix_parser.add_argument("--all-platforms", action="store_true")
+    matrix_parser.add_argument("--group-by-backend", action="store_true")
+    sub.add_parser("libraries")
     builder = sub.add_parser("build")
     builder.add_argument("--backend", choices=("all", "vcpkg", "conan", "xmake"), default="all")
     builder.add_argument("--library", help="Build only this library from the smoke selection")
@@ -360,6 +380,10 @@ def main():
     reporter.add_argument("--platform", choices=("linux", "mac", "win"), default="linux")
     reporter.add_argument("--run-url", default="")
     args = parser.parse_args()
+    if args.command == "libraries":
+        config, _ = read_config()
+        print("\n".join(item["name"] for item in config["libraries"]))
+        return 0
     if args.command == "matrix":
         config, _ = read_config()
         libraries = [item["name"] for item in config["libraries"]]
@@ -367,7 +391,13 @@ def main():
             extension = "bat" if args.platform == "win" else "sh"
             if not (ROOT / "scripts" / args.platform / f"{library}.{extension}").is_file():
                 raise ValueError(f"Missing library entry: {library}.{extension}")
-        runner = {"linux": "ubuntu-24.04", "mac": "macos-14", "win": "windows-2022"}[args.platform]
+        runners = {"linux": "ubuntu-24.04", "mac": "macos-14", "win": "windows-2022"}
+        runner = runners[args.platform]
+        if args.group_by_backend:
+            hosts = list(runners) if args.all_platforms else [args.platform]
+            print(json.dumps({"include": [dict(platform=host, os=runners[host], backend=backend)
+                                          for host in hosts for backend in config["backends"]]}))
+            return 0
         print(json.dumps({"backend": config["backends"], "library": libraries,
                           "include": [{"platform": args.platform, "os": runner}]}))
         return 0
