@@ -2,6 +2,12 @@ name: Android Common 10 Libraries
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Host platform
+        type: choice
+        default: linux
+        options: [linux, mac, win]
   push:
     branches: [main]
     paths:
@@ -9,6 +15,8 @@ on:
       - "libraries/android-smoke.json"
       - "scripts/android-smoke.py"
       - "scripts/linux/**"
+      - "scripts/mac/**"
+      - "scripts/win/**"
       - "scripts/lib/**"
       - "scripts/setup.sh"
       - "scripts/build.sh"
@@ -33,11 +41,13 @@ jobs:
       - name: Validate per-library report aggregation
         run: python3 -m unittest discover -s tests -p test_android_smoke.py -v
       - id: matrix
-        run: echo "value=$(python3 scripts/android-smoke.py matrix)" >> "$GITHUB_OUTPUT"
+        env:
+          PLATFORM: ${{ inputs.platform || 'linux' }}
+        run: echo "value=$(python3 scripts/android-smoke.py matrix --platform "$PLATFORM")" >> "$GITHUB_OUTPUT"
 
   build:
     needs: discover
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -48,10 +58,20 @@ jobs:
         with:
           python-version: "3.12"
       - name: Build ${{ matrix.library }} with ${{ matrix.backend }}
+        if: matrix.platform != 'win'
+        shell: bash
         env:
           BACKEND: ${{ matrix.backend }}
           LIBRARY: ${{ matrix.library }}
-        run: bash "scripts/linux/${LIBRARY}.sh" --backend "$BACKEND"
+          PLATFORM: ${{ matrix.platform }}
+        run: bash "scripts/${PLATFORM}/${LIBRARY}.sh" --backend "$BACKEND"
+      - name: Build Windows library with native batch entry
+        if: matrix.platform == 'win'
+        shell: cmd
+        env:
+          BACKEND: ${{ matrix.backend }}
+          LIBRARY: ${{ matrix.library }}
+        run: call "scripts\win\%LIBRARY%.bat" --backend "%BACKEND%"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -78,18 +98,22 @@ jobs:
       - name: Generate build report
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PLATFORM: ${{ inputs.platform || 'linux' }}
         run: |
-          python3 scripts/android-smoke.py report --run-url "$RUN_URL"
+          python3 scripts/android-smoke.py report --platform "$PLATFORM" --run-url "$RUN_URL"
       - name: Publish Markdown even when a build fails
         if: always()
         env:
           REPORT_BRANCH: ${{ github.ref_name }}
+          PLATFORM: ${{ inputs.platform || 'linux' }}
         run: |
-          test -f docs/android-support/common10-build.md
-          cat docs/android-support/common10-build.md >> "$GITHUB_STEP_SUMMARY"
+          report=docs/android-support/common10-build.md
+          if [ "$PLATFORM" != linux ]; then report="docs/android-support/common10-build-${PLATFORM}.md"; fi
+          test -f "$report"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/android-support/common10-build.md
+          git add "$report"
           if ! git diff --cached --quiet; then
             git commit -m "docs: record common Android library build results"
             git pull --rebase origin "$REPORT_BRANCH"

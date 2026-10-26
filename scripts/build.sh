@@ -186,6 +186,9 @@ write_probe_project() {
     local repo_root_lua
 
     repo_root_lua="${REPO_ROOT//\\//}"
+    if is_windows_shell; then
+        repo_root_lua="$(cygpath -m "$REPO_ROOT")"
+    fi
     repo_root_lua="${repo_root_lua//\"/\\\"}"
 
     if [ -n "$xmake_version" ]; then

@@ -1,0 +1,55 @@
+name: Android Library Entry Checks
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/android-smoke.py"
+      - "scripts/linux/**"
+      - "scripts/mac/**"
+      - "scripts/win/**"
+      - "tests/test_android_smoke.py"
+      - ".github/workflows/android-entry-checks.yml"
+permissions:
+  contents: read
+jobs:
+  entries:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-24.04
+          - platform: mac
+            os: macos-14
+          - platform: win
+            os: windows-2022
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate matrix and report aggregation
+        run: |
+          python scripts/android-smoke.py matrix --platform ${{ matrix.platform }}
+          python -m unittest discover -s tests -p test_android_smoke.py -v
+      - name: Check shell entries
+        if: matrix.platform != 'win'
+        shell: bash
+        run: |
+          for entry in scripts/"$PLATFORM"/*.sh; do bash -n "$entry"; done
+          for entry in scripts/"$PLATFORM"/*.sh; do
+            [ "$(basename "$entry")" = build.sh ] || bash "$entry" --help
+          done
+      - name: Check native Windows batch entries
+        if: matrix.platform == 'win'
+        shell: cmd
+        run: |
+          for %%F in (scripts\win\*.bat) do (
+            call "%%F" --help
+            if errorlevel 1 exit /b 1
+          )
