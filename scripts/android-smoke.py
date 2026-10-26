@@ -203,6 +203,15 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
         msys_bash = msys_root / "usr/bin/bash.exe"
         if not msys_bash.is_file():
             raise RuntimeError("Conan Android/OpenSSL requires MSYS2; install it or set MSYS2_ROOT")
+        # The Windows runner image ships MSYS2 without its base development
+        # packages, so make.exe is missing even though bash.exe exists. Conan's
+        # Android toolchain uses Unix Makefiles for CMake, and OpenSSL's recipe
+        # invokes make through win_bash, so install it before any package build.
+        make = msys_root / "usr/bin/make.exe"
+        if not make.is_file():
+            checked([str(msys_bash), "-lc", "pacman --noconfirm --needed -Sy make"])
+        if not make.is_file():
+            raise RuntimeError("MSYS2 make was not installed; cannot build Conan packages on Windows")
         env["PATH"] = str(msys_root / "usr/bin") + os.pathsep + env["PATH"]
         profile.write_text(f"[settings]\nos=Android\narch={arch}\ncompiler=clang\ncompiler.version={version}\n"
                            f"compiler.libcxx=c++_static\nbuild_type=Release\nos.api_level={config['api']}\n"
