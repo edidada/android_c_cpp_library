@@ -239,6 +239,25 @@ write_probe_project() {
     } >"$dir/probe.cpp"
 }
 
+# xmake 把包安装失败时真正的编译/链接错误写在 installdir.failed/logs/install.txt，
+# 终端里通常只剩一句 "install failed!"。失败时把这份日志并入构建日志，便于 CI 归档排查。
+collect_xmake_install_log() {
+    local xmake_pkg="$1" log_file="$2"
+    local cache="${XMAKE_GLOBALDIR:-$HOME/.xmake}/cache/packages"
+    local install_log=""
+
+    [ -d "$cache" ] || return 0
+    install_log="$(find "$cache" -type f -path "*/${xmake_pkg}/*/installdir.failed/logs/install.txt" 2>/dev/null | head -n 1)"
+    [ -n "$install_log" ] || return 0
+
+    {
+        echo
+        echo "===== xmake install.txt: $install_log ====="
+        tail -n 300 "$install_log"
+        echo "===== end xmake install.txt ====="
+    } >>"$log_file"
+}
+
 build_with_xmake() {
     local name="$1" abi="$2" lib_api="$3"
     local xmake_pkg="$4" xmake_version="$5" xmake_configs="$6"
@@ -255,12 +274,14 @@ build_with_xmake() {
     log "[$name][$abi][xmake] 配置 (xmake 包: $xmake_pkg)"
     if ! run_logged "$log_file" \
         xmake f -y -P "$work" -p android -a "$abi" --ndk="$ndk" --ndk_sdkver="$lib_api" -m release -o "$work/build"; then
+        collect_xmake_install_log "$xmake_pkg" "$log_file"
         print_log_tail "$log_file"
         return 1
     fi
 
     log "[$name][$abi][xmake] 编译"
     if ! run_logged "$log_file" xmake -y -P "$work" -j "$jobs"; then
+        collect_xmake_install_log "$xmake_pkg" "$log_file"
         print_log_tail "$log_file"
         return 1
     fi
@@ -268,6 +289,7 @@ build_with_xmake() {
     log "[$name][$abi][xmake] 导出产物"
     if ! run_logged "$log_file" \
         xmake require --export --packagedir="$artifact" -P "$work" "$xmake_pkg"; then
+        collect_xmake_install_log "$xmake_pkg" "$log_file"
         print_log_tail "$log_file"
         return 1
     fi
