@@ -155,6 +155,8 @@ def build(backend, output, ndk_arg, jobs, library=None):
         result["error"] = str(error)
         print(f"ERROR: {error}", flush=True)
     finally:
+        for row in rows:
+            print(f"[{backend}][{row['name']}] {row['status']}: {row.get('error', '')}", flush=True)
         (directory / "results.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return 0 if all(row["status"] == "success" for row in rows) else 1
 
@@ -206,7 +208,6 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
                            f"compiler.libcxx=c++_static\nbuild_type=Release\nos.api_level={config['api']}\n"
                            f"[conf]\ntools.android:ndk_path={env['ANDROID_NDK_HOME']}\n"
                            f"tools.microsoft.bash:subsystem=msys2\ntools.microsoft.bash:path={msys_bash.as_posix()}\n"
-                           "tools.microsoft.bash:login=False\n"
                            f"tools.gnu:make_program={(msys_root / 'usr/bin/make.exe').as_posix()}\n"
                            "[buildenv]\n"
                            f"PATH=+(path){ndk_bin_dir(env['ANDROID_NDK_HOME']).as_posix()};{(msys_root / 'usr/bin').as_posix()}\n",
@@ -301,7 +302,25 @@ def build_vcpkg(config, rows, directory, log, env, jobs):
 def verify_archives(directory, ndk, abi):
     expected = {"arm64-v8a": "AArch64", "armeabi-v7a": "ARM", "x86_64": "Advanced Micro Devices X86-64", "x86": "Intel 80386"}[abi]
     readelf = ndk_bin_dir(ndk) / ("llvm-readelf.exe" if host_platform() == "win" else "llvm-readelf")
-    archives = [path for path in directory.rglob("*.a") if "/full_deploy/build/" not in path.as_posix()]
+    archives = []
+    host_tools = set()
+    for path in directory.rglob("*.a"):
+        if "/full_deploy/build/" in path.as_posix():
+            continue
+        # xmake exports toolchain dependencies too. Their Windows/MSYS2
+        # archives are build tools, not Android library outputs.
+        for parent in path.parents:
+            metadata = parent / "manifest.txt"
+            if metadata.is_file():
+                text = metadata.read_text(encoding="utf-8")
+                kind = re.search(r'^    kind = "([^"]+)"', text, re.M)
+                plat = re.search(r'^    plat = "([^"]+)"', text, re.M)
+                if kind and plat and kind.group(1) in ("binary", "toolchain") and plat.group(1) != "android":
+                    host_tools.add(parent)
+                    break
+            if parent == directory:
+                archives.append(path)
+                break
     if not archives:
         raise RuntimeError(f"No static archives found: {directory}")
     for archive in archives:
@@ -310,6 +329,8 @@ def verify_archives(directory, ndk, abi):
         if not machines or any(machine != expected for machine in machines):
             raise RuntimeError(f"ABI mismatch: {archive}: {set(machines)}; expected {expected}")
     print(f"Verified {len(archives)} archives: {expected}", flush=True)
+    if host_tools:
+        print(f"Excluded {len(host_tools)} xmake host tool packages using manifest kind/platform", flush=True)
     return len(archives)
 
 
