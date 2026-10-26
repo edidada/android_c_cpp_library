@@ -47,7 +47,7 @@ def resolve_ndk():
     for name in ("ANDROID_NDK", "ANDROID_NDK_HOME", "ANDROID_NDK_ROOT", "ANDROID_NDK_LATEST_HOME"):
         path = os.environ.get(name)
         if path and Path(path, "build/cmake/android.toolchain.cmake").is_file():
-            return Path(path).resolve().as_posix()
+            return Path(path).absolute().as_posix()
     for name in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
         sdk = os.environ.get(name)
         if not sdk:
@@ -56,7 +56,7 @@ def resolve_ndk():
                           key=lambda path: tuple(int(part) for part in re.findall(r"\d+", path.name)), reverse=True)
         for path in versions:
             if (path / "build/cmake/android.toolchain.cmake").is_file():
-                return path.resolve().as_posix()
+                return path.absolute().as_posix()
     raise RuntimeError("Android NDK not found; use --ndk or ANDROID_NDK_HOME")
 
 
@@ -108,7 +108,9 @@ def build(backend, output, ndk_arg, jobs, library=None):
               "abi": config["abi"], "api": config["api"], "ndk": "",
               "generated": datetime.now(timezone.utc).isoformat(), "rows": rows}
     try:
-        ndk = Path(ndk_arg).resolve().as_posix() if ndk_arg else resolve_ndk()
+        # Preserve the SDK's short junction path (C:/Android/...). Resolving it
+        # can introduce Program Files (x86), which upstream make rules fail to quote.
+        ndk = Path(ndk_arg).absolute().as_posix() if ndk_arg else resolve_ndk()
         if not Path(ndk, "build/cmake/android.toolchain.cmake").is_file():
             raise ValueError(f"Invalid Android NDK: {ndk}")
         result["ndk"] = ndk
@@ -193,9 +195,17 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
         version = re.search(r"clang version (\d+)", subprocess.check_output([str(clang), "--version"], text=True)).group(1)
         arch = {"arm64-v8a": "armv8", "armeabi-v7a": "armv7", "x86_64": "x86_64", "x86": "x86"}[config["abi"]]
         profile = Path(conan_home) / "profiles" / f"android-{config['abi']}"
+        # OpenSSL 4's Conan recipe declares win_bash. Use the backend's MSYS2
+        # tool environment explicitly, never Git Bash or a Git installation path.
+        msys_root = Path(os.environ.get("MSYS2_ROOT", "C:/msys64"))
+        msys_bash = msys_root / "usr/bin/bash.exe"
+        if not msys_bash.is_file():
+            raise RuntimeError("Conan Android/OpenSSL requires MSYS2; install it or set MSYS2_ROOT")
+        env["PATH"] = str(msys_root / "usr/bin") + os.pathsep + env["PATH"]
         profile.write_text(f"[settings]\nos=Android\narch={arch}\ncompiler=clang\ncompiler.version={version}\n"
                            f"compiler.libcxx=c++_static\nbuild_type=Release\nos.api_level={config['api']}\n"
-                           f"[conf]\ntools.android:ndk_path={env['ANDROID_NDK_HOME']}\n", encoding="utf-8")
+                           f"[conf]\ntools.android:ndk_path={env['ANDROID_NDK_HOME']}\n"
+                           f"tools.microsoft.bash:subsystem=msys2\ntools.microsoft.bash:path={msys_bash.as_posix()}\n", encoding="utf-8")
     for row in rows:
         started = time.monotonic()
         name = row["name"]

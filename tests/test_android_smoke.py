@@ -1,8 +1,10 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 
 spec = importlib.util.spec_from_file_location(
@@ -42,6 +44,15 @@ class LibraryReportTests(unittest.TestCase):
         duplicate.write_bytes(original.read_bytes())
         with self.assertRaisesRegex(ValueError, "duplicate library"):
             smoke.report(self.root, self.destination, "")
+
+    def test_ndk_lookup_preserves_sdk_junction_path(self):
+        ndk = self.root / "short-sdk/ndk"
+        toolchain = ndk / "build/cmake/android.toolchain.cmake"
+        toolchain.parent.mkdir(parents=True)
+        toolchain.write_text("", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"ANDROID_NDK_HOME": str(ndk)}, clear=True), \
+                mock.patch.object(Path, "resolve", side_effect=AssertionError("must preserve junction path")):
+            self.assertEqual(smoke.resolve_ndk(), ndk.absolute().as_posix())
 
 
 if __name__ == "__main__":
