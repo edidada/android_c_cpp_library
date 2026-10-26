@@ -65,7 +65,11 @@ def build(backend, output, ndk_arg, jobs):
             raise ValueError(f"Invalid Android NDK: {ndk}")
         result["ndk"] = ndk
         result["ndkVersion"] = (Path(ndk) / "source.properties").read_text(encoding="utf-8").strip()
-        env = dict(os.environ, ANDROID_NDK_HOME=ndk, PYTHONUTF8="1")
+        # OpenSSL's Android Configure locates clang through PATH, including
+        # recipes that do not generate a compiler environment themselves.
+        ndk_bin = str(Path(ndk) / "toolchains/llvm/prebuilt/linux-x86_64/bin")
+        env = dict(os.environ, ANDROID_NDK_HOME=ndk, PYTHONUTF8="1",
+                   PATH=ndk_bin + os.pathsep + os.environ.get("PATH", ""))
         if backend == "vcpkg":
             build_vcpkg(config, rows, directory, log, env, jobs)
             result["toolReference"] = config["vcpkgRevision"]
@@ -86,6 +90,11 @@ def build(backend, output, ndk_arg, jobs):
                         record = records[row["name"]]
                         row.update(status="success" if record[3] == "ok" else "failure", seconds=int(record[4]))
                     row["package"] = manifest[row["name"]][backend].get("reference", manifest[row["name"]][backend].get("package"))
+                    if row["status"] == "success":
+                        try:
+                            row["archivesVerified"] = verify_archives(directory / "packages" / row["name"], ndk, config["abi"])
+                        except RuntimeError as error:
+                            row.update(status="failure", error=str(error))
             if code:
                 result["error"] = f"build entry exited {code}; see build.log and per-library logs"
     except Exception as error:
@@ -116,7 +125,9 @@ def build_vcpkg(config, rows, directory, log, env, jobs):
     (overlays / f"{triplet}.cmake").write_text(
         f"set(VCPKG_TARGET_ARCHITECTURE {arch})\nset(VCPKG_CRT_LINKAGE dynamic)\n"
         "set(VCPKG_LIBRARY_LINKAGE static)\nset(VCPKG_CMAKE_SYSTEM_NAME Android)\n"
-        f"set(VCPKG_CMAKE_SYSTEM_VERSION {config['api']})\nset(VCPKG_BUILD_TYPE release)\n", encoding="utf-8")
+        f"set(VCPKG_CMAKE_SYSTEM_VERSION {config['api']})\nset(VCPKG_BUILD_TYPE release)\n"
+        f"set(VCPKG_CMAKE_CONFIGURE_OPTIONS -DANDROID_ABI={config['abi']})\n"
+        f"set(VCPKG_MAKE_BUILD_TRIPLET --host={dict(arm64='aarch64', arm='arm', x64='x86_64', x86='i686')[arch]}-linux-android)\n", encoding="utf-8")
     env = dict(env, VCPKG_MAX_CONCURRENCY=str(jobs), VCPKG_BINARY_SOURCES="clear", VCPKG_DISABLE_METRICS="1")
     installed = directory / "installed"
     result_ports = {item["name"]: item["vcpkg"] for item in config["libraries"]}
@@ -126,10 +137,31 @@ def build_vcpkg(config, rows, directory, log, env, jobs):
         code = run([tool / "vcpkg", "install", f"{port}:{triplet}", "--classic",
                     f"--overlay-triplets={overlays}", f"--x-install-root={installed}",
                     f"--x-buildtrees-root={work / 'buildtrees'}", f"--x-packages-root={work / 'packages'}"], log, env)
+        if code == 0:
+            try:
+                row["archivesVerified"] = verify_archives(installed / triplet / "lib", env["ANDROID_NDK_HOME"], config["abi"])
+            except RuntimeError as error:
+                code = 1
+                row["error"] = str(error)
         row.update(status="success" if code == 0 else "failure", seconds=round(time.monotonic() - started), package=port)
     status = installed / "vcpkg/status"
     if status.is_file():
         (directory / "installed-versions.txt").write_text(status.read_text(), encoding="utf-8")
+
+
+def verify_archives(directory, ndk, abi):
+    expected = {"arm64-v8a": "AArch64", "armeabi-v7a": "ARM", "x86_64": "Advanced Micro Devices X86-64", "x86": "Intel 80386"}[abi]
+    readelf = Path(ndk) / "toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+    archives = [path for path in directory.rglob("*.a") if "/full_deploy/build/" not in path.as_posix()]
+    if not archives:
+        raise RuntimeError(f"No static archives found: {directory}")
+    for archive in archives:
+        headers = subprocess.check_output([str(readelf), "-h", str(archive)], text=True)
+        machines = [line.split(":", 1)[1].strip() for line in headers.splitlines() if "Machine:" in line]
+        if not machines or any(machine != expected for machine in machines):
+            raise RuntimeError(f"ABI mismatch: {archive}: {set(machines)}; expected {expected}")
+    print(f"Verified {len(archives)} archives: {expected}", flush=True)
+    return len(archives)
 
 
 def report(output, destination, run_url):
@@ -146,6 +178,7 @@ def report(output, destination, run_url):
              f"[GitHub Actions 运行与日志]({run_url})" if run_url else "独立脚本运行。", "",
              "验证的是选定配置下包的实际构建与产物导出；不是 Android 设备运行测试，也不证明所有 ABI/选项可用。",
              "xmake 会编译头文件探针；Conan/vcpkg 构建包。各后端版本及默认功能可能不同。", "",
+             "所有成功项还需通过 NDK llvm-readelf 的静态库架构检查；arm64 目标必须为 AArch64。", "",
              "| 库 | vcpkg | Conan 2 | xmake |", "| --- | --- | --- | --- |"]
     passed = 0
     for item in config["libraries"]:
