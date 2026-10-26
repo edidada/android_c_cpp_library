@@ -210,7 +210,8 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
                            f"tools.microsoft.bash:subsystem=msys2\ntools.microsoft.bash:path={msys_bash.as_posix()}\n"
                            f"tools.gnu:make_program={(msys_root / 'usr/bin/make.exe').as_posix()}\n"
                            "[buildenv]\n"
-                           f"PATH=+(path){ndk_bin_dir(env['ANDROID_NDK_HOME']).as_posix()};{(msys_root / 'usr/bin').as_posix()}\n",
+                           f"PATH=+(path){(msys_root / 'usr/bin').as_posix()}\n"
+                           f"PATH=+(path){ndk_bin_dir(env['ANDROID_NDK_HOME']).as_posix()}\n",
                            encoding="utf-8")
     for row in rows:
         started = time.monotonic()
