@@ -1,0 +1,18 @@
+{
+  "abi": "arm64-v8a",
+  "api": 28,
+  "backends": ["vcpkg", "conan", "xmake"],
+  "vcpkgRevision": "817892b0ecbc6af994dd6df999c73faf795adbf2",
+  "libraries": [
+    {"name": "zlib", "vcpkg": "zlib"},
+    {"name": "zstd", "vcpkg": "zstd"},
+    {"name": "libpng", "vcpkg": "libpng"},
+    {"name": "openssl", "vcpkg": "openssl"},
+    {"name": "sqlite3", "vcpkg": "sqlite3"},
+    {"name": "libcurl", "vcpkg": "curl"},
+    {"name": "libuv", "vcpkg": "libuv"},
+    {"name": "libssh2", "vcpkg": "libssh2"},
+    {"name": "c-ares", "vcpkg": "c-ares"},
+    {"name": "libevent", "vcpkg": "libevent"}
+  ]
+}
