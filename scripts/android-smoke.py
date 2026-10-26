@@ -191,14 +191,6 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
             checked([str(venv / "Scripts/python.exe"), "-m", "pip", "install", "conan>=2,<3"])
             env["PATH"] = str(venv / "Scripts") + os.pathsep + env["PATH"]
             tool = str(venv / "Scripts/conan.exe")
-        # CMake's Unix Makefiles generator mixes Windows and MSYS paths on this
-        # host. Ninja avoids that layer entirely; install it because some
-        # windows-2022 images no longer ship it.
-        if not shutil.which("ninja", path=env["PATH"]):
-            checked([sys.executable, "-m", "pip", "install", "ninja"])
-            env["PATH"] = str(Path(sys.executable).parent / "Scripts") + os.pathsep + env["PATH"]
-        if not shutil.which("ninja", path=env["PATH"]):
-            raise RuntimeError("ninja is required for Windows Conan builds")
         checked([tool, "profile", "detect", "--force"])
         conan_home = subprocess.check_output([tool, "config", "home"], env=env, text=True).strip()
         clang = ndk_bin_dir(env["ANDROID_NDK_HOME"]) / "clang.exe"
@@ -226,11 +218,13 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
                            f"[conf]\ntools.android:ndk_path={env['ANDROID_NDK_HOME']}\n"
                            f"tools.microsoft.bash:subsystem=msys2\ntools.microsoft.bash:path={msys_bash.as_posix()}\n"
                            f"tools.gnu:make_program={(msys_root / 'usr/bin/make.exe').as_posix()}\n"
-                           "tools.cmake.cmaketoolchain:generator=Ninja\n"
+                           "tools.cmake.cmaketoolchain:generator=MSYS Makefiles\n"
                            "[buildenv]\n"
                            f"PATH=+(path){(msys_root / 'usr/bin').as_posix()}\n"
                            f"PATH=+(path){ndk_bin_dir(env['ANDROID_NDK_HOME']).as_posix()}\n",
                            encoding="utf-8")
+        checked([str(msys_bash), "-lc",
+                 'echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"; command -v clang || true; echo "PATH=$PATH"'])
     for row in rows:
         started = time.monotonic()
         name = row["name"]
