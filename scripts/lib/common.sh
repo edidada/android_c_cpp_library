@@ -9,6 +9,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="${MANIFEST:-$REPO_ROOT/libraries/manifest.json}"
 MANIFEST_TOOL="$REPO_ROOT/scripts/lib/manifest.py"
 PYTHON="${PYTHON:-python3}"
+# Git Bash pipes otherwise make Windows Python use the runner's cp1252.
+export PYTHONUTF8=1
 
 log() {
     printf '\033[1;34m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"

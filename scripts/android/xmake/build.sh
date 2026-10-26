@@ -50,4 +50,4 @@ done
 exec bash "$REPO_ROOT/scripts/build.sh" \
     --libs "$libs" \
     --backends xmake \
-    "${build_args[@]}"
+    ${build_args[@]+"${build_args[@]}"}

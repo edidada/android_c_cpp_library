@@ -315,8 +315,8 @@ build_with_conan() {
         -s:h "build_type=$build_type" \
         -s:h "os.api_level=$lib_api" \
         -c:h "tools.build:jobs=$jobs" \
-        "${option_args[@]}" \
-        "${config_args[@]}" \
+        ${option_args[@]+"${option_args[@]}"} \
+        ${config_args[@]+"${config_args[@]}"} \
         --build=missing \
         --deployer=full_deploy \
         --deployer-folder="$artifact" \

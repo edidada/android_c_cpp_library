@@ -51,4 +51,4 @@ done
 exec bash "$REPO_ROOT/scripts/build.sh" \
     --libs "$libs" \
     --backends conan \
-    "${build_args[@]}"
+    ${build_args[@]+"${build_args[@]}"}
