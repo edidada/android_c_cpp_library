@@ -24,6 +24,9 @@ package("libevent")
             "-DEVENT__DISABLE_MBEDTLS=ON",
             "-DEVENT__LIBRARY_TYPE=STATIC",
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            -- Android provides pthreads in libc, but CMake's probe includes
+            -- pthread_cancel, which Bionic intentionally does not implement.
+            "-DCMAKE_HAVE_LIBC_PTHREAD=ON",
         }
         table.insert(configs, "-DCMAKE_BUILD_TYPE=" .. (package:debug() and "Debug" or "Release"))
         table.insert(configs, "-DEVENT__DISABLE_DEBUG_MODE=" .. (package:debug() and "OFF" or "ON"))

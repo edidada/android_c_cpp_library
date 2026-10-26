@@ -264,6 +264,6 @@ print_log_tail() {
     local log_file="$1"
     local lines="${2:-40}"
     [ -f "$log_file" ] || return 0
-    err "最近 ${lines} 行日志（$log_file）："
+    err "最近 ${lines} 行日志（${log_file}）："
     tail -n "$lines" "$log_file" >&2 || true
 }

@@ -281,6 +281,13 @@ build_with_conan() {
     local log_file="$dist_dir/$name/logs/$abi-conan.log"
     local profile
     local -a option_args=()
+    local -a config_args=()
+
+    # Bionic supplies pthreads in libc but has no pthread_cancel, so the
+    # generic FindThreads libc probe fails for libevent on Android.
+    if [ "$name" = "libevent" ]; then
+        config_args+=(-c:h 'tools.cmake.cmaketoolchain:extra_variables={"CMAKE_HAVE_LIBC_PTHREAD": True}')
+    fi
 
     profile="$(conan_profile_name "$abi")"
     rm -rf "$work"
@@ -309,6 +316,7 @@ build_with_conan() {
         -s:h "os.api_level=$lib_api" \
         -c:h "tools.build:jobs=$jobs" \
         "${option_args[@]}" \
+        "${config_args[@]}" \
         --build=missing \
         --deployer=full_deploy \
         --deployer-folder="$artifact" \
@@ -343,7 +351,7 @@ write_summary() {
         echo "- 结果: $status"
         echo "- NDK: \`$ndk\`"
         echo "- ABI: \`$abis\`"
-        echo "- API level: $api（单库最低要求会取最大值）"
+        echo "- API level: ${api}（单库最低要求会取最大值）"
         echo "- 构建类型: $build_type"
         echo "- xmake: ${xmake_version_text}"
         echo "- Conan: ${conan_version_text}"
@@ -464,8 +472,8 @@ overall_md="$dist_dir/summary.md"
 {
     echo "## Android C/C++ 库构建汇总"
     echo
-    echo "- 总计: $total，失败: $failed，跳过: $skipped"
-    echo "- ABI: \`$abis\`，API: $api，构建类型: $build_type"
+    echo "- 总计: ${total}，失败: ${failed}，跳过: $skipped"
+    echo "- ABI: \`$abis\`，API: ${api}，构建类型: $build_type"
     echo
     echo "| 库 | ABI | 后端 | 状态 | 耗时 | 日志 |"
     echo "| --- | --- | --- | --- | ---: | --- |"

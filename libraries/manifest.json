@@ -307,6 +307,7 @@
       "title": "libuv",
       "category": "async",
       "description": "跨平台异步 I/O 库",
+      "minAndroidApi": 28,
       "headers": ["uv.h"],
       "xmake": { "package": "libuv" },
       "conan": { "reference": "libuv/1.53.0" }

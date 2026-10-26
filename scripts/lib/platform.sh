@@ -74,13 +74,13 @@ platform_build() {
     system="$(uname -s)"
     case "$platform" in
         linux)
-            [ "$system" = "Linux" ] || die "scripts/linux/build.sh 只能在 Linux 上运行（当前: $system）"
+            [ "$system" = "Linux" ] || die "scripts/linux/build.sh 只能在 Linux 上运行（当前: ${system}）"
             ;;
         mac)
-            [ "$system" = "Darwin" ] || die "scripts/mac/build.sh 只能在 macOS 上运行（当前: $system）"
+            [ "$system" = "Darwin" ] || die "scripts/mac/build.sh 只能在 macOS 上运行（当前: ${system}）"
             ;;
         win)
-            is_windows_shell || die "scripts/win/build.sh 需要在 Windows 的 Git Bash 中运行（当前: $system）"
+            is_windows_shell || die "scripts/win/build.sh 需要在 Windows 的 Git Bash 中运行（当前: ${system}）"
             # Git Bash 下 python3 可能是 Microsoft Store 别名，优先使用 python。
             if have python; then
                 export PYTHON=python

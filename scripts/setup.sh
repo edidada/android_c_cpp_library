@@ -79,7 +79,7 @@ case "$backends" in
         if printf '%s' "$backends" | tr ',' '\n' | grep -qx xmake; then want_xmake=1; fi
         if printf '%s' "$backends" | tr ',' '\n' | grep -qx conan; then want_conan=1; fi
         [ "$want_xmake" -eq 1 ] || [ "$want_conan" -eq 1 ] \
-            || die "--backends 非法: $backends（可选 all, xmake, conan, xmake,conan）"
+            || die "--backends 非法: ${backends}（可选 all, xmake, conan, xmake,conan）"
         ;;
 esac
 
@@ -95,7 +95,7 @@ install_xmake() {
         have powershell.exe || die "Windows 下安装 xmake 需要 powershell.exe"
         log "安装 xmake（PowerShell 安装脚本）..."
         powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
-            "Invoke-Expression (Invoke-WebRequest 'https://xmake.io/psget.text' -UseBasicParsing).Content" \
+            "Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://xmake.io/psget.text')" \
             || die "xmake 安装失败"
         append_path_if_dir "$HOME/xmake"
         append_path_if_dir "${LOCALAPPDATA:-$HOME/AppData/Local}/Programs/xmake"
@@ -239,10 +239,10 @@ generate_conan_profiles() {
         while [ "$version" -ge 14 ]; do
             write_conan_profile "$abi" "$version"
             if conan profile show -pr:h="$(conan_profile_name "$abi")" >/dev/null 2>&1; then
-                log "生成 Conan profile: $(conan_profile_name "$abi")（clang $version, API $api）"
+                log "生成 Conan profile: $(conan_profile_name "$abi")（clang ${version}, API ${api}）"
                 break
             fi
-            warn "Conan settings 不支持 clang $version，尝试 $((version - 1))"
+            warn "Conan settings 不支持 clang ${version}，尝试 $((version - 1))"
             version=$((version - 1))
         done
 
