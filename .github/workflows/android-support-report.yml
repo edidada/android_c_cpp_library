@@ -1,0 +1,66 @@
+name: Android Package Support Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * 1"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/android-support-report.yml"
+      - "scripts/android-support-report.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-support-report-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 检查平台条件解析
+        run: python -m unittest discover -s tests -p test_android_support_report.py -v
+      - name: 获取上游包仓库（仅扫描，不执行配方）
+        env:
+          SOURCES: ${{ runner.temp }}/android-package-sources
+        run: |
+          mkdir -p "$SOURCES"
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$SOURCES/vcpkg"
+          git clone --depth 1 https://github.com/conan-io/conan-center-index.git "$SOURCES/conan"
+          git clone --depth 1 https://github.com/xmake-io/xmake-repo.git "$SOURCES/xmake"
+      - name: 生成 Markdown 报告
+        run: |
+          python scripts/android-support-report.py --sources "${{ runner.temp }}/android-package-sources"
+          cat docs/android-support/README.md >> "$GITHUB_STEP_SUMMARY"
+      - name: 上传报告 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-package-support-report
+          path: docs/android-support/*.md
+          if-no-files-found: error
+      - name: 提交 Markdown 到当前分支
+        env:
+          REPORT_BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/android-support/*.md
+          if git diff --cached --quiet; then
+            echo "报告无变化"
+            exit 0
+          fi
+          git commit -m "docs: refresh Android package support inventory"
+          git pull --rebase origin "$REPORT_BRANCH"
+          git push origin "HEAD:$REPORT_BRANCH"

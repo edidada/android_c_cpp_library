@@ -1,5 +1,12 @@
 # Android C/C++ 库构建
 
+## 全量 Android 包支持报告
+
+[自动生成的 Markdown 报告](docs/android-support/README.md)扫描 **vcpkg、Conan Center（Conan 2）、xmake-repo** 的全量包元数据，保留上游快照与配方链接。
+在 Actions 中运行 **Android Package Support Report**，即可生成报告并由机器人提交回当前分支；每周一也会自动更新。
+该工作流只扫描，不编译。vcpkg 按 Android 四种 ABI 计算顶层 `supports`；Conan/xmake 的动态配方标明 Android 线索或待验证，不将候选库当作已编译支持。
+下方的 55 库 manifest 是本仓库的构建选集，不是三个包管理器的全量清单。
+
 使用 **xmake** 与 **Conan 2** 在 Linux / macOS / Windows(Git Bash) 上交叉编译常用 C/C++ 库，
 生成 Android 各 ABI 的头文件与静态库。仓库本身不包含这些库的源码，只维护「要构建哪些库」的
 清单和构建脚本。
