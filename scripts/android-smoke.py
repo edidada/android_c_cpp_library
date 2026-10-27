@@ -229,7 +229,10 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
         # build scripts must see MSYS2-style POSIX paths, otherwise a
         # C:/Android/... NDK root never matches PATH entries that bash exports
         # as /c/Android/.... The NDK path used by CMake stays in Windows form.
-        ndk_msys = msys_path(env["ANDROID_NDK_HOME"])
+        # Conan lowercases every [buildenv] path entry for the msys2 subsystem
+        # (subsystem_path), so ANDROID_NDK_ROOT must be lowercase too: OpenSSL's
+        # perl matches which("clang") against ^$ANDROID_NDK_ROOT case-sensitively.
+        ndk_msys = msys_path(env["ANDROID_NDK_HOME"]).lower()
         profile.write_text(f"[settings]\nos=Android\narch={arch}\ncompiler=clang\ncompiler.version={version}\n"
                            f"compiler.libcxx=c++_static\nbuild_type=Release\nos.api_level={config['api']}\n"
                            f"[conf]\ntools.android:ndk_path={env['ANDROID_NDK_HOME']}\n"
@@ -237,8 +240,8 @@ def build_windows(config, manifest, rows, backend, directory, log, env, jobs):
                            f"tools.gnu:make_program={(msys_root / 'usr/bin/make.exe').as_posix()}\n"
                            "tools.cmake.cmaketoolchain:generator=MSYS Makefiles\n"
                            "[buildenv]\n"
-                           f"PATH=+(path){msys_path(msys_root / 'usr/bin')}\n"
-                           f"PATH=+(path){msys_path(ndk_bin_dir(env['ANDROID_NDK_HOME']))}\n"
+                           f"PATH=+(path){msys_path(msys_root / 'usr/bin').lower()}\n"
+                           f"PATH=+(path){msys_path(ndk_bin_dir(env['ANDROID_NDK_HOME'])).lower()}\n"
                            f"ANDROID_NDK_ROOT={ndk_msys}\n",
                            encoding="utf-8")
     for row in rows:
