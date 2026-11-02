@@ -109,6 +109,16 @@ def vcpkg_rows(root):
     return rows
 
 
+# Conan recipes that reference these symbols are very likely doing real Android
+# build work (NDK / toolchain / CMake cross vars) rather than just mentioning the
+# word in a comment or an exclusion string.
+BUILD_SIGNALS = re.compile(
+    r"tools\.android|android_ndk|ANDROID_NDK|CMAKE_ANDROID|android\.toolchain|"
+    r"android_abi|ANDROID_ABI|ndk_build|ndk\.toolchain|conan\.tools\.android",
+    re.I,
+)
+
+
 def conan_rows(root):
     rows = []
     for recipe in sorted((root / "recipes").glob("*/**/conanfile.py")):
@@ -123,8 +133,15 @@ def conan_rows(root):
                                and "android" in node.value.lower()})
         except SyntaxError:
             mentions = []
-        status = "含 Android 逻辑" if mentions else "待验证"
-        evidence = "配方包含 Android 字符串，可能是支持、排除或补丁；需核对 L" + ", L".join(map(str, mentions[:8])) if mentions else "未检测到 Android 字符串；通用配方也可能支持 Android"
+        if not mentions:
+            # No signal at all: collapsed into one summary row by the caller.
+            status, evidence = "待验证", ""
+        elif BUILD_SIGNALS.search(text):
+            status = "含 Android 构建支持"
+            evidence = "配方引用 Android NDK / toolchain / CMake 交叉编译符号，可能为构建支持；需核对 L" + ", L".join(map(str, mentions[:8]))
+        else:
+            status = "含 Android 字样(需核对)"
+            evidence = "配方出现 Android 字符串，可能是支持、排除或补丁；需核对 L" + ", L".join(map(str, mentions[:8]))
         rows.append((f"{relative.parts[0]}/{relative.parts[1]}", status, evidence, recipe, None))
     return rows
 
@@ -157,7 +174,7 @@ def main():
              "- xmake：Lua 安装回调、宿主条件及依赖需要运行时求解；Android 字符串仅作为人工核对入口。",
              "- 待验证并不表示不支持。要确认可用，需指定版本、宿主、ABI、API、选项并在 Actions 编译。",
              "- Android 目标 ABI：arm64-v8a、armeabi-v7a、x86_64、x86；宿主 Linux/macOS/Windows 的支持不能直接互换。",
-             "", "| 包管理器 | 扫描条目 | 元数据允许 | 含 Android 逻辑 | 待验证 | 元数据排除 | 上游快照 |",
+             "", "| 包管理器 | 扫描条目 | 元数据允许 | 检出 Android 信号 | 待验证 | 元数据排除 | 上游快照 |",
              "| --- | ---: | ---: | ---: | ---: | ---: | --- |"]
     for manager, scanner in (("vcpkg", vcpkg_rows), ("conan", conan_rows), ("xmake", xmake_rows)):
         root = (args.sources / manager).resolve()
@@ -167,23 +184,39 @@ def main():
             raise RuntimeError(f"{manager}: no recipes found; refusing to publish an empty inventory")
         counts = Counter(row[1] for row in rows)
         upstream = f"https://github.com/{REPOS[manager]}/tree/{sha}"
-        index.append(f"| [{manager}]({manager}.md) | {len(rows)} | {counts['元数据允许']} | {counts['含 Android 逻辑']} | {counts['待验证']} | {counts['元数据排除']} | [{sha[:12]}]({upstream}) |")
+        if manager == "vcpkg":
+            signal = counts.get("含 Android 逻辑", 0)
+        else:
+            signal = sum(value for key, value in counts.items() if key != "待验证")
+        index.append(f"| [{manager}]({manager}.md) | {len(rows)} | {counts['元数据允许']} | {signal} | {counts['待验证']} | {counts['元数据排除']} | [{sha[:12]}]({upstream}) |")
         document = [f"# {manager} Android 元数据清单", "", f"生成时间：{stamp}", "",
                     "[判定方法与限制](README.md)。以下条目均未在本扫描工作流中编译验证。", "",
                     f"上游：[固定快照 {sha}]({upstream})；共 {len(rows)} 条。", ""]
+        if manager != "vcpkg":
+            document.append("未检出 Android 字样的配方已合并为下方一行汇总，不再逐条展开——单个此类条目无可核对信号，逐条列出只会浪费时间。")
+            document.append("")
         if manager == "vcpkg":
             document += ["ABI 列：允许 / 排除 / 未知；仅顶层 supports 条件，不保证依赖或 features 可构建。", "",
                          "| 库 | 判定 | arm64-v8a | armeabi-v7a | x86_64 | x86 | supports / 依据 |",
                          "| --- | --- | --- | --- | --- | --- | --- |"]
         else:
             document += ["| 库 / 配方目录 | 判定 | 依据（含排除条件也会列出） |", "| --- | --- | --- |"]
-        for name, status, evidence, path, results in rows:
+        # vcpkg rows carry per-ABI metadata and stay fully expanded. conan/xmake
+        # rows without a signal are collapsed into one summary line so the report
+        # stays skimmable instead of dumping thousands of identical "待验证" rows.
+        detailed = rows if manager == "vcpkg" else [r for r in rows if r[1] != "待验证"]
+        unknown = 0 if manager == "vcpkg" else sum(1 for r in rows if r[1] == "待验证")
+        for name, status, evidence, path, results in detailed:
             link = f"https://github.com/{REPOS[manager]}/blob/{sha}/{path.relative_to(root).as_posix()}"
             cells = [f"[{escape(name)}]({link})", status]
             if results is not None:
                 cells += [{True: "允许", False: "排除", None: "未知"}[value] for value in results]
             cells.append(escape(evidence))
             document.append("| " + " | ".join(cells) + " |")
+        if unknown:
+            document.append(
+                f"| 其余 {unknown} 个配方 | 待验证(汇总) | "
+                f"静态扫描未检出 Android 字样，无有效信号，不逐条列出 |")
         (args.output / f"{manager}.md").write_text("\n".join(document) + "\n", encoding="utf-8")
         print(f"{manager}: {len(rows)} entries; {dict(counts)}")
     index += ["", "## 实际编译结果", "",
