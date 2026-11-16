@@ -1,6 +1,6 @@
 # Android 库支持信息
 
-生成时间：2026-11-09 09:23 UTC
+生成时间：2026-11-16 09:11 UTC
 
 全量扫描三个包仓库的元数据，不执行配方、不编译。**本报告不等于编译通过清单。**
 
@@ -12,9 +12,9 @@
 
 | 包管理器 | 扫描条目 | 元数据允许 | 检出 Android 信号 | 待验证 | 元数据排除 | 上游快照 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| [vcpkg](vcpkg.md) | 2910 | 2504 | 0 | 20 | 386 | [ec48c11eae94](https://github.com/microsoft/vcpkg/tree/ec48c11eae9448c8c6e7739d93e06fa2433aa95f) |
-| [conan](conan.md) | 2028 | 0 | 118 | 1910 | 0 | [08d9ba53fce3](https://github.com/conan-io/conan-center-index/tree/08d9ba53fce3cf3d5a9157da1fdecd32371c452a) |
-| [xmake](xmake.md) | 2033 | 0 | 380 | 1653 | 0 | [511a3c4536a1](https://github.com/xmake-io/xmake-repo/tree/511a3c4536a12318e7c1effa012dc8d7b5637526) |
+| [vcpkg](vcpkg.md) | 2915 | 2507 | 0 | 21 | 387 | [8f363bdc1135](https://github.com/microsoft/vcpkg/tree/8f363bdc11359ede4bc51e5eb32a2617538049c8) |
+| [conan](conan.md) | 2030 | 0 | 118 | 1912 | 0 | [6f3abb462bd7](https://github.com/conan-io/conan-center-index/tree/6f3abb462bd77f361754da844ab7137ff1d3a567) |
+| [xmake](xmake.md) | 2035 | 0 | 381 | 1654 | 0 | [0d4d4ef2fcac](https://github.com/xmake-io/xmake-repo/tree/0d4d4ef2fcaced81971e1a480c61ffa979c9fd93) |
 
 ## 实际编译结果
 
